@@ -1,3 +1,32 @@
+### Run
+
+```
+git clone git@github.com:ecommpro/wordpress-dockerized.git myblog
+cd myblog
+docker-compose up -d
+```
+
+
+### Shell access
+
+```
+docker-compose exec php-cli zsh
+```
+
+### DB export
+
+```
+docker-compose exec db mysqldump app | gzip > dump/app-$(date +%Y%m%d).sql.gz
+```
+
+### DB import
+
+```
+zcat dump/app... | docker exec -i $(docker-compose ps -q db) mysql app
+```
+
+Common entry point for multiple dockerized apps
+
 ```
 mkdir -p ~/.local/etc/ca-certificates ~/.local/run
 touch ~/.local/etc/sniproxy.conf
