@@ -1,0 +1,26 @@
+#!/bin/sh
+wp core is-installed 2>/dev/null && echo "WordPress is already installed" && exit
+
+[ ! -f wp-config-sample.php ] && wp core download
+
+[ -f ~/.local/bin/mysql ] || (mkdir -p ~/.local/bin && cat <<EOT > $HOME/.local/bin/mysql
+#!/bin/sh
+true
+EOT
+) \
+&& chmod +x ~/.local/bin/mysql
+
+while ! ls /shhh/mysql:user.shhh >/dev/null 2>&1; do echo "Waiting for password ..."; sleep 3; done;
+
+[ ! -f wp-config.php ] && PATH=~/.local/bin:$PATH && wp core config --dbhost=db --dbname=app --dbuser=app --dbpass=$(cat /shhh/mysql:user.shhh)
+
+while (wp query 2>&1 | grep "database connection" > /dev/null); do echo 'Waiting for database connection ...'; sleep 3; done;
+
+echo "Installing WordPress ..."
+
+wp core install \
+--url="https://$DOMAIN" \
+--title="$NAME" \
+--admin_user=${ADMIN_USER:-wpadmin} \
+--admin_password=${ADMIN_PASSWORD:-wpadmin123} \
+--admin_email=${ADMIN_EMAIL:-dev@ecomm.pro}

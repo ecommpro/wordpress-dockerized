@@ -1,0 +1,128 @@
+version: '3'
+
+services:
+  ingress:
+    image: haproxy:2.0
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./etc/haproxy:/usr/local/etc/haproxy
+      - cert-data:/certs
+      - ${INGRESS_RUN_DIRECTORY:-./var/run}:/local/run
+    depends_on:
+      - nginx
+    environment:
+      - COMPOSE_PROJECT_NAME
+    command: /bin/sh -c "syslogd -O /proc/1/fd/1 -S -D; exec haproxy -f /usr/local/etc/haproxy/haproxy.ssl.cfg"
+
+  varnish:
+    image: ecommpro/varnish:4
+    restart: always
+    volumes:
+      - ./etc/varnish:/etc/varnish
+    depends_on:
+      - nginx
+    environment:
+      - VARNISH_CONFIG_FILE=/etc/varnish/default.vcl
+
+  nginx:
+    image: nginx:1.17
+    restart: always
+    volumes:
+      - ./etc/nginx/conf.d:/etc/nginx/conf.d
+      - ${ROOT:-./www}:/var/www
+    depends_on:
+      - php-fpm
+
+  php-fpm:
+    image: ecommpro/php:7.2-fpm
+    user: ${HOST_UID:-0}:${HOST_GID:-0}
+    restart: always
+    environment:
+      - "WAIT_FOR_FILES=/shhh/mysql:root.shhh /shhh/mysql:user.shhh"
+      - SENDMAIL_COMMAND
+    volumes:
+      - shhh-data:/shhh
+      - ./etc/php-fpm/ecommpro.conf:/usr/local/etc/php-fpm.d/ecommpro.conf
+      - ./etc/php/conf.d:/usr/local/etc/php/conf.d
+      - ./etc/php-fpm/bin:/opt/bin
+      - ${ROOT:-./www}:/var/www
+    depends_on:
+      - db
+    entrypoint: /opt/bin/docker-entrypoint.sh
+
+  db:
+    image: mariadb:10.4
+    restart: always
+    environment:
+      - MYSQL_DATABASE=app
+      - MYSQL_USER=app
+      - MYSQL_ROOT_PASSWORD_FILE=/shhh/mysql:root.shhh
+      - MYSQL_PASSWORD_FILE=/shhh/mysql:user.shhh
+      - "WAIT_FOR_FILES=/shhh/mysql:root.shhh /shhh/mysql:user.shhh"
+    volumes:
+      - shhh-data:/shhh
+      - mysql-data:/var/lib/mysql
+      - ./etc/mariadb/alt-docker-entrypoint.sh:/usr/local/bin/alt-docker-entrypoint.sh
+    depends_on:
+      - shhh
+    entrypoint: alt-docker-entrypoint.sh
+
+  cert-issuer:
+    image: ecommpro/openssl
+    volumes:
+      - ./etc/openssl/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
+      - ${CADIR:-~/.local/etc/ca-certificates}:/ca
+      - cert-data:/certs
+    environment:
+        - CAFILE=local-ca
+        - "CASUBJECT=/C=ES/ST=Valencia/L=Valencia/O=EcommPro SL/OU=The IT Crowd/CN=ecomm.pro"
+        - DOMAIN
+    entrypoint: docker-entrypoint.sh
+
+  shhh:
+    image: ecommpro/shhh
+    volumes:
+      - shhh-data:/shhh
+    environment:
+        - SHHH_ROOT=/shhh
+        - "SECRETS=mysql:root mysql:user"
+
+  php-cli:
+    image: ecommpro/php:7.2-cli
+    restart: always
+    user: ${HOST_UID:-0}:${HOST_GID:-0}
+    working_dir: /var/www
+    volumes:
+      - ./etc/php/conf.d:/usr/local/etc/php/conf.d
+      - ./etc/php-cli/entrypoint.sh:/usr/local/bin/entrypoint.sh
+      - ./etc/php-cli/bootstrap.d:/local/bootstrap.d
+      - shhh-data:/shhh
+      - ${ROOT:-./www}:/var/www
+      - ./var/php-cli/local:/work/.local
+      - ./var/php-cli/optbin:/opt/bin
+    environment:
+        - DOMAIN
+        - NAME
+        - SENDMAIL_COMMAND
+    entrypoint: entrypoint.sh
+
+  redis:
+    image: redis:5
+    restart: always
+    sysctls:
+      - net.core.somaxconn=65535
+    volumes:
+      - ./etc/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  mailhog:
+    image: mailhog/mailhog:latest
+
+volumes:
+  shhh-data:
+  cert-data:
+  mysql-data:
